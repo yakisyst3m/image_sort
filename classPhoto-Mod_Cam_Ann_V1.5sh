@@ -1,0 +1,287 @@
+#!/bin/bash
+########################################################################################################
+#                                                                                                      #
+#                    C L A S S E M E N T   D E S   P H O T O S   P A R    R A P P O R T                #
+#                A   L A    M A R Q U E    E T    A U     M O D E L E    D E     C A M E R A           #
+#                  G R A C E     A U X    R E C H E R C H E S    D E S     M  E T A D A T A            #
+#                                                                                                      #
+########################################################################################################
+#
+VERSION="V_1.5"
+MAJ="2019/05/03"
+AUTHOR="By_yakisyst3m"
+#
+######################################   BUT DU SCRIPT  ################################################
+#
+# Le script classe les photos en fonction du type d'appareil photo et de l'année de la prise.
+# Un dossier par modèle-marque et un sous-dossier par année.
+#
+###################################   NOTICE d'Uutilisation  ###########################################
+#
+# Programmes à installer avant :
+# ----------------------------
+# apt install libimage-exiftool-perl tree
+#
+# Lancer le script de cette façon : ./classPhotoModeleCamera.sh <chemin du dossier contenant les photos>
+# exemple : 
+#			./classPhotoModeleCamera.sh /home/user/Images/A_trier/
+#
+######################################   LES PARAMETRES  ###############################################
+
+# Fichiers Temporaires pour la manipulation
+PATHTEMPORAIRE="/tmp"
+PATHFICHIERMAKEMODELE=$PATHTEMPORAIRE"/makemodele.tmpZ"
+PATHFICHIERCONCATEN=$PATHTEMPORAIRE"/concatenation.tmpZ"
+PATHFICHIERESPACEUNDERSC=$PATHTEMPORAIRE"/espaceUnderscore.tmpZ"
+PATHRAPPORT=$PATHTEMPORAIRE"/rapport.tmpZ"
+
+# Compteurs de dossiers et fichiers pour les infos en fin de script ; cela permettra de sortir un rappot
+COMPTEUR_DOSSIER_MARQUE_CREE=0
+COMPTEUR_DOSSIER_ANNEE_CREE=0
+COMPTEUR_FICHIER_DEPLACE=0
+
+# Fichier de sortie du rapport
+RAPPORT="Rapport_classement_fichiers.txt"
+
+
+#####################################   LES FONCTIONS  ################################################
+
+	#***********	DOSSIER MARQUE/MODELE	*************
+
+##### Fonction recherche des metadonnees MARQUE et MODELE
+function rechercheMetadaModele()
+{
+	# On extrait la marque et le modèle de l'appareil photo et on redirige dans le fichier temporaire 1
+	exiftool -s $i | grep -iE "^make|^model" | awk -F ":" '{print $NF}' | sed 's/\ {1}//'  > $PATHFICHIERMAKEMODELE
+
+	# On place "le nom de la marque de l'appareil photo" dans la variable MARQUE
+	MARQUE=$(head -1 $PATHFICHIERMAKEMODELE)
+
+	# On place "le nom du modèle de l'appareil photo" dans la variable MODELE
+	MODELE=$(tail -1 $PATHFICHIERMAKEMODELE)
+}
+
+##### Fonction formatage du nom de dossier
+function formatNomDossier()
+{
+	# Création DE LA VARIABLE du NOM de DOSSIER
+	DOSSIER="$MARQUE$MODELE"
+
+	# On redirige les chaine de caractères de la marque et du modèle dans le fichier temporaire 2
+	echo $DOSSIER > $PATHFICHIERCONCATEN
+
+	# On remplace les espaces par des UnderScore entre les mots (marque et modèle)
+	cat $PATHFICHIERCONCATEN | sed 's/\ /_/g' > $PATHFICHIERESPACEUNDERSC
+
+	# Formatage du nom de dossier - Nommage définitif
+	DOSSIER=$(cat $PATHFICHIERESPACEUNDERSC)
+}
+
+
+	#***********	DOSSIER ANNEE	*************
+
+##### Fonction recherche des metadonnees DATE DE CREATION (On peut ici remplacer par un autre TAG comme date de modification, Software...)
+function rechercheMetadaAnnee()
+{
+	# On extrait la date de creation de l'appareil photo et déplace l'image dans le dossier ANNEE
+	DOSSIER_DATE=$(exiftool -s $i | grep -iE "^createdate" | awk -F ":" '{print $2}' | sed 's/\ //g')
+}
+
+
+#############################   DEBUT DU PROGRAMME  ########################################
+
+##### On se place dans le dossier entré en argument dans la commande du script
+##### Cette facon de faire évitera que le srcipt soit déplacé par lui même lors du trie ; dans le cas où le script serait dans le dossier de recherche
+##### Pourquoi ce choix ? Ce script possède une base permettant de l'adapter à une multitudes de situations ; 
+##### en changeant les valeurs de recherche sur les METADATA, on pourra trier toutes sortes de fichiers (pdf, odt, doc, txt ...)
+clear
+cd $1
+
+##### On remplace tous les espaces des noms de fichiers par des underscore
+find ./ -name "* *" -type f -exec rename -v 's/\ /_/g' {} \;
+
+##### On fait une recherche dans le dossier grâce à l'argument $1 ET uniquement dans ce dossier pas les sous-dossiers
+testFichiers=$(find ./ -maxdepth 1 -type f)
+
+
+##### DEBUT DE LA BOUCLE - Pour chaque image du dossier de recherche et de trie $1
+for i in $testFichiers
+do
+	# Appel des fonctions recherche metadonnées marque et modèle et année
+	rechercheMetadaModele
+	rechercheMetadaAnnee
+	
+	# Appel de la fonction formatage du nom de dossier
+	formatNomDossier
+
+	# Pour éviter de prendre en compte la casse
+	shopt -s nocasematch 						
+
+	#	************   DEBUT DES TESTS SUR LES CONDITIONS DE RECHERCHE	***************
+
+# DOSSIER PRINCIPAL	(MARQUE_MODELE)
+	# ICI LE DOSSIER N'EXISTE PAS ET POSSEDE DES METADATA MARQUE MODELE, ON LE CREE
+	if [[ ! -d "$DOSSIER" && -n "$DOSSIER" ]]  
+	then
+		echo -e "	==== TEST 1 - CREATION DU DOSSIER MARQUE / MODELE ====\n"
+		mkdir $DOSSIER					 		# création du dossier MARQUE
+		#echo " [ Création du dossier ] : 	$DOSSIER"
+		((COMPTEUR_DOSSIER_MARQUE_CREE++)) 		# COMPTEUR DE DOSSIER MARQUE
+		echo "--------------------------------------------------------------------------------------"
+		
+	# ICI LE DOSSIER EXISTE, POSSEDE DES METADATA MARQUE MODELE MAIS PAS DE METADATA ANNEE
+	elif [[ -d "$DOSSIER" && -n "$DOSSIER" && -z "$DOSSIER_DATE" ]]
+	then
+		echo -e "	==== TEST 2 - DEPLACER LES IMAGES DANS LE DOSSIER MARQUE / MODELE - CAR PAS DE METADATA ANNEE ====\n"
+		mv $i $DOSSIER
+		#echo " [ On déplace l'image ] : 	$i"
+		#echo " [ Dans le dossier ] : 		$DOSSIER"
+		((COMPTEUR_FICHIER_DEPLACE++)) 			# COMPTEUR DE FICHIER DEPLACE
+		echo "--------------------------------------------------------------------------------------"	
+		
+# LES SOUS-DOSSIERS	(ANNEE)
+	# ICI LE DOSSIER EXISTE, PRESENCE DE METADATA MARQUE, MODELE ET ANNEE
+	elif [[ -d "$DOSSIER" && -n "$DOSSIER" && -n "$DOSSIER_DATE" ]]
+	then
+		if [[ ! -d "$DOSSIER/$DOSSIER_DATE" ]] 	# Si DOSSIER_DATE N'EXISTE PAS, LE CREER
+		then
+			echo -e "	==== TEST 3 - CONDITION 1 - CREATION DU SOUS-DOSSIER ANNEE - DEPLACEMENT DU FICHIER ====\n"
+			mkdir $DOSSIER/$DOSSIER_DATE		# création du dossier ANNEE
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] : 		$DOSSIER/$DOSSIER_DATE"
+			mv $i $DOSSIER/$DOSSIER_DATE		# déplacement du fichier ds le dossier ANNEE
+			((COMPTEUR_DOSSIER_ANNEE_CREE++)) 	# COMPTEUR DE DOSSIER ANNEE
+			((COMPTEUR_FICHIER_DEPLACE++)) 		# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+			
+		else														# Si le DOSSIER_DATE existe déplacer les images
+			echo -e "	==== TEST 3 - CONDITION 2  - DEPLACEMENT DU FICHIER DANS ANNEE ====\n"
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		$DOSSIER/$DOSSIER_DATE"
+			mv $i $DOSSIER/$DOSSIER_DATE		# déplacement du fichier ds le dossier ANNEE
+			((COMPTEUR_FICHIER_DEPLACE++)) 		# COMPTEUR DE FICHIER DEPLACE		
+			echo "--------------------------------------------------------------------------------------"
+		fi
+
+# SCANNERS
+	# ICI LE FICHIER EST UN FICHIER SCAN D'APRES SES METADATA AU NIVEAU D'APRES SON "filename"
+	elif [[ "$(exiftool -s $i | grep -iE "^filename" | awk -F ":" '{print $NF}' | sed 's/\ //g')" =~ ^num|scan.*  ]] 
+	then
+		if [[ ! -d "01-SCAN-NUMERISATION" ]]		# Si le dossier 01-SCAN-NUMERISATION n'existe pas on le créé et on déplace les images
+		then
+			echo -e "	==== TEST 4 - CONDITION 1 - CREATION DU DOSSIER NUMERISATION - DEPLACEMENT DU FICHIER ====\n"
+			mkdir "01-SCAN-NUMERISATION" 
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		01-SCAN-NUMERISATION" 	# déplacement du fichier ds le dossier 01-SCAN-NUMERISATION
+			mv $i "01-SCAN-NUMERISATION"
+			((COMPTEUR_DOSSIER_MARQUE_CREE++)) 		# COMPTEUR DE DOSSIER MARQUE
+			((COMPTEUR_FICHIER_DEPLACE++)) 			# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+			
+		else										# Le dossier 01-SCAN-NUMERISATION existe, on déplace les images
+			echo -e "	==== TEST 4 - CONDITION 2 - DEPLACEMENT DU FICHIER DANS NUMERISATION ====\n"
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		01-SCAN-NUMERISATION" 	# déplacement du fichier ds le dossier 01-SCAN-NUMERISATION
+			mv $i "01-SCAN-NUMERISATION"
+			((COMPTEUR_FICHIER_DEPLACE++)) 			# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+		fi
+
+# LES NO METADATA (MODEL/MARQUE)   (AVEC OU SANS ANNEE)
+	# Si PAS DE METADATA (MARQUE/MODELE), MAIS UNIQUEMENT (ANNEE) DE PRESENT
+	elif [[ -z "$DOSSIER" && -n "$DOSSIER_DATE" ]]
+	then
+		if [[ -d "00-NO_METADATA" && -n "$DOSSIER_DATE" ]]
+		then
+			echo -e "	==== TEST 5  - CONDITION 1 - CREATION DU DOSSIER NOMETADATA ANNEE - DEPLACEMENT DU FICHIER DANS NOMETADATA ANNEE ====\n"
+			mkdir "00-NO_METADATA/$DOSSIER_DATE"
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		00-NO_METADATA/$DOSSIER_DATE"
+			mv $i "00-NO_METADATA/$DOSSIER_DATE"			# déplacement du fichier ds le dossier ANNEE
+			((COMPTEUR_DOSSIER_MARQUE_CREE++)) 	# COMPTEUR DE DOSSIER MARQUE
+			((COMPTEUR_DOSSIER_ANNEE_CREE++)) 	# COMPTEUR DE DOSSIER ANNEE
+			((COMPTEUR_FICHIER_DEPLACE++)) 		# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+			
+		
+		else										# Le dossier 00-NO_METADATA existe, on déplace les images
+			echo -e "	==== TEST 5  - CONDITION 2 - DEPLACEMENT DU FICHIER DANS NOMETADATA ANNEE ====\n"
+			mkdir -p "00-NO_METADATA/$DOSSIER_DATE"
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		00-NO_METADATA/$DOSSIER_DATE"
+			mv $i "00-NO_METADATA/$DOSSIER_DATE"			# déplacement du fichier ds le dossier ANNEE
+			((COMPTEUR_FICHIER_DEPLACE++)) 		# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+		fi
+	
+	# SI AUCUNE METADATA (MARQUE/MODELE) ET (ANNEE)
+	elif [[ -z "$DOSSIER" && -z "$DOSSIER_DATE" ]]
+	then
+		if [[ ! -d "00-NO_METADATA" ]]
+		then
+			echo -e "	==== TEST 6  - CONDITION 1 - CREATION DU DOSSIER NOMETADATA - DEPLACEMENT DU FICHIER DANS NOMETADATA ====\n"
+			mkdir "00-NO_METADATA"
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		00-NO_METADATA"
+			mv $i "00-NO_METADATA"				# déplacement du fichier ds le dossier 00-NO_METADATA
+			((COMPTEUR_DOSSIER_MARQUE_CREE++)) 	# COMPTEUR DE DOSSIER MARQUE
+			((COMPTEUR_FICHIER_DEPLACE++)) 		# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+			
+		else										# Le dossier 00-NO_METADATA existe, on déplace les images
+			echo -e "	==== TEST 6  - CONDITION 2 - DEPLACEMENT DU FICHIER DANS NOMETADATA ====\n"
+			#echo " [ On déplace l'image ] : 	$i"
+			#echo " [ Dans le dossier ] :		00-NO_METADATA"
+			mv $i "00-NO_METADATA"				# déplacement du fichier ds le dossier 00-NO_METADATA
+			((COMPTEUR_FICHIER_DEPLACE++)) 		# COMPTEUR DE FICHIER DEPLACE
+			echo "--------------------------------------------------------------------------------------"
+		fi
+	fi # FIN DU SI FINAL
+
+
+done
+#### FIN DE LA BOUCLE 
+
+
+#### Je donne tous les droits à tout le monde
+chmod -R 777 *
+
+#############################  RESULTATS DANS TERMLINAL ########################################
+#clear
+echo -e "o=======================================================================================o"
+echo -e "|\t\t\t\t |\   /| 						|"
+echo -e "|\t\t\t\t  \|_|/  						|"
+echo -e "|\t\t\t\t  /. .\ 						|"
+echo -e "|\t\t\t\t =\_Y_/= 						|"
+echo -e "|\t\t\t\t  {>o<}  				---------------------------------\n|"
+echo -e  "o========================     VOS RESULTATS   =========================	$MAJ $VERSION $AUTHOR\n|"
+echo -e  "| Nombre de DOSSIERS par MARQUE créés :		$COMPTEUR_DOSSIER_MARQUE_CREE dossiers.\n|"
+echo -e  "| Nombre de DOSSIERS par ANNEE créés : 		$COMPTEUR_DOSSIER_ANNEE_CREE dossiers.\n|"
+echo -e  "| Nombre de FICHIERS déplacés :  		$COMPTEUR_FICHIER_DEPLACE fichiers.\n|"
+echo -e  "o======================================================================\n"
+echo -e  ">>> Le fichier [  $(pwd)/$RAPPORT  ] a été créé.\n\n"
+
+#############################   CREATION DU RAPPORT  ######################################
+
+echo -e "============================		RAPPORT DU CLASSEMENT 		==========================\n" > $RAPPORT
+echo -e "o=======================================================================================o" >> $RAPPORT
+echo -e "|\t\t\t\t\t\t\t\t |\   /| 												|" >> $RAPPORT
+echo -e "|\t\t\t\t\t\t\t\t  \|_|/  												|" >> $RAPPORT
+echo -e "|\t\t\t\t\t\t\t\t  /. .\ 												|" >> $RAPPORT
+echo -e "|\t\t\t\t\t\t\t\t =\_Y_/= 												|" >> $RAPPORT
+echo -e "|\t\t\t\t\t\t\t\t  {>o<}  								---------------------------------\n|" >> $RAPPORT
+echo -e  "o========================     VOS RESULTATS   =========================	$MAJ $VERSION $AUTHOR\n|" >> $RAPPORT
+echo -e  "| Nombre de DOSSIERS par MARQUE créés :		$COMPTEUR_DOSSIER_MARQUE_CREE dossiers.\n|" >> $RAPPORT
+echo -e  "| Nombre de DOSSIERS par ANNEE créés : 		$COMPTEUR_DOSSIER_ANNEE_CREE dossiers.\n|" >> $RAPPORT
+echo -e  "| Nombre de FICHIERS déplacés :  		$COMPTEUR_FICHIER_DEPLACE fichiers.\n|" >> $RAPPORT
+echo -e  "o======================	ARCHITECTURE DES DOSSIRES ET FICHIERS	=====================o\n" >> $RAPPORT
+tree -o $PATHRAPPORT 
+cat $PATHRAPPORT >> $RAPPORT
+chmod 777 $RAPPORT
+
+#############################   SUPPRESSION DES FICHIERS TEMPORAIRES ######################################
+rm -f "$PATHTEMPORAIRE/"*.tmpZ
+
+#############################   SORTIE DU PROGRAMME  ######################################
+exit 1
+
