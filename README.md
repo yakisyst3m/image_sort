@@ -5,9 +5,9 @@
 ![GitHub last commit](https://img.shields.io/github/last-commit/yakisyst3m/image_sort) ![GitHub release-date](https://img.shields.io/github/release-date/yakisyst3m/image_sort)
 
 Pré-requis :
-Veuiller installer "exiftool"
+Veuiller installer "exiftool" et "rename"
 ```
-apt install libimage-exiftool-perl
+apt install libimage-exiftool-perl rename
 ```
 #
 Lancer le script :
